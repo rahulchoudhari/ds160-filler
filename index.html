@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DS-160 Profile Maker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+/* VOICE: calm, civic, instructional — a government form helper that respects privacy
+   IDEA: a consular counter: drop the old form on the desk, get a stamped profile back
+   PICTURE: the working tool itself — drop zone, then the extracted profile with checklist
+   COLOUR and TYPE: passport navy ink on white, one stamp-red accent; Public Sans (US web design system)
+   LAYOUT: steps 1-2-3 in one column; result splits into checklist + JSON on wide screens */
+:root{color-scheme:light dark;--bg:light-dark(#ffffff,#0e1626);--ink:light-dark(#14213d,#e7ecf5);--muted:light-dark(#55607a,#9aa6bd);
+--line:light-dark(#d9dfe9,#26324a);--panel:light-dark(#f3f6fb,#152037);--navy:light-dark(#1b2f5b,#9db7ef);--red:light-dark(#b31942,#ff6b88);--ok:light-dark(#1f6b45,#6fd39e)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Public Sans",system-ui,sans-serif;overflow-x:clip}
+.band{padding:clamp(24px,4vw,56px) max(5vw,16px)}
+.wrap{max-width:1120px;margin:0 auto}
+h1{font-size:clamp(30px,4.5vw,46px);line-height:1.05;margin:0 0 10px;font-weight:800;text-wrap:balance}
+h2{font-size:22px;margin:0 0 12px}
+p{margin:0 0 12px;max-width:68ch}
+.lead{color:var(--muted);font-size:17px}
+.priv{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:14px;margin-top:6px}
+.priv b{color:var(--ok)}
+.drop{margin-top:22px;border:2px dashed var(--navy);border-radius:14px;background:var(--panel);min-height:210px;display:grid;place-items:center;text-align:center;padding:28px;cursor:pointer;transition:background .2s}
+.drop.over{background:light-dark(#e6edf9,#1b2a48)}
+.drop strong{font-size:20px;display:block;margin-bottom:6px}
+.drop small{color:var(--muted)}
+.stamp{display:inline-block;border:3px solid var(--red);color:var(--red);border-radius:8px;padding:4px 12px;font-weight:800;transform:rotate(-4deg);letter-spacing:.02em;margin-bottom:12px}
+input[type=file]{position:absolute;opacity:0;pointer-events:none}
+.status{margin-top:12px;min-height:24px;color:var(--muted)}
+.status.err{color:var(--red)}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:24px;margin-top:8px}
+@media(max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+.card{border:1px solid var(--line);border-radius:12px;padding:18px;background:var(--bg)}
+.list{margin:0;padding-left:20px}.list li{margin:6px 0}
+.list li.warn{color:var(--red)}
+label{display:block;font-weight:600;font-size:14px;margin:12px 0 4px}
+input,select,textarea{font:16px "Public Sans",system-ui,sans-serif;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;width:100%}
+input:focus,select:focus,textarea:focus,button:focus-visible,.drop:focus-visible{outline:3px solid light-dark(#7aa2e8,#4f7bd1);outline-offset:2px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+textarea{font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;min-height:380px;resize:vertical}
+button{font:600 16px "Public Sans",system-ui,sans-serif;min-height:44px;padding:0 18px;border-radius:8px;border:0;background:var(--navy);color:var(--bg);cursor:pointer}
+button.ghost{background:transparent;color:var(--navy);border:1px solid var(--navy)}
+.btns{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:10px}
+@media(max-width:760px){.steps{grid-template-columns:minmax(0,1fr)}}
+.step{border-top:3px solid var(--navy);padding-top:10px}
+.step b{display:block;font-size:17px;margin-bottom:4px}
+pre{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;font:12.5px/1.45 ui-monospace,Menlo,monospace;max-height:320px}
+.hide{display:none}
+details#pptbox{margin-top:14px;border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+details#pptbox summary{cursor:pointer;font-weight:600;min-height:28px}
+details#pptbox.must{border-color:var(--red)}details#pptbox.must summary{color:var(--red)}
+.alt{background:var(--panel)}
+.who{font-size:28px;font-weight:800;margin:0 0 4px}
+.small{font-size:14px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.drop{transition:none}}
+</style>
+</head>
+<body>
+<section class="band">
+ <div class="wrap">
+  <h1>Turn last time's DS-160 into one-click autofill</h1>
+  <p class="lead">Drop the "Print Application" PDF of a previous DS-160. This page reads it, builds a profile, and lists what needs updating. A Tampermonkey script then fills the new DS-160 from that profile.</p>
+  <span class="priv"><b>●</b> The PDF is read inside your browser. Nothing is uploaded, and ID numbers from the old PDF are never copied.</span>
+
+  <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a DS-160 PDF">
+   <div><span class="stamp">DS-160</span><strong>Drop the old application PDF here</strong><small>or click to choose a file · one person at a time</small></div>
+  </div>
+  <input type="file" id="file" accept="application/pdf,.pdf">
+  <div class="status" id="status" aria-live="polite"></div>
+ </div>
+</section>
+
+<section class="band hide" id="result">
+ <div class="wrap">
+  <p class="who" id="who"></p>
+  <p class="small" id="meta"></p>
+  <div class="grid">
+   <div>
+    <div class="card">
+     <h2>Update for this application</h2>
+     <p class="small">These change every time and are not copied from the old form. Fill what you know; the rest you can type on the form.</p>
+     <div class="row">
+      <div><label for="arr">Intended arrival date</label><input type="date" id="arr"></div>
+      <div><label for="rcpt">Receipt / petition number</label><input id="rcpt" autocomplete="off"></div>
+     </div>
+     <div class="row">
+      <div><label for="los">Length of stay</label><input id="los" inputmode="numeric"></div>
+      <div><label for="losu">Unit</label><select id="losu"><option>Year(s)</option><option>Month(s)</option><option>Week(s)</option><option>Day(s)</option></select></div>
+     </div>
+     <div id="salwrap"><label for="sal">Monthly salary (number only)</label><input id="sal" inputmode="decimal"></div>
+     <div class="row">
+      <div><label for="visa">Most recent US visa: issue date</label><input type="date" id="visa"></div>
+      <div><label for="visanum">Most recent US visa: visa number</label><input id="visanum" autocomplete="off" placeholder="red number on the stamp"></div>
+     </div>
+     <p class="small" style="margin-top:6px">Both are on the visa stamp in your passport, usually the newest one. Leave them blank if you have never had a US visa.</p>
+     <details id="pptbox">
+      <summary id="pptsum">Got a new passport since last time?</summary>
+      <p class="small" id="pptmsg" style="margin-top:8px">Enter where and when the new passport was issued. Type the passport number on the form.</p>
+      <div class="row">
+       <div><label for="pcity">City where issued</label><input id="pcity" autocomplete="off"></div>
+       <div><label for="pstate">State/province where issued</label><input id="pstate" autocomplete="off"></div>
+      </div>
+      <label for="pcountry">Country where issued</label>
+      <input id="pcountry" list="countries" placeholder="e.g. INDIA or UNITED STATES OF AMERICA" autocomplete="off">
+      <datalist id="countries"><option>INDIA</option><option>UNITED STATES OF AMERICA</option><option>CANADA</option><option>UNITED KINGDOM</option><option>UNITED ARAB EMIRATES</option></datalist>
+      <div class="row">
+       <div><label for="pissue">Issue date</label><input type="date" id="pissue"></div>
+       <div><label for="pexp">Expiry date</label><input type="date" id="pexp"></div>
+      </div>
+     </details>
+     <div class="btns"><button id="apply">Apply to profile</button></div>
+    </div>
+    <div class="card" style="margin-top:18px">
+     <h2>Check before you submit</h2>
+     <ul class="list" id="review"></ul>
+    </div>
+   </div>
+   <div class="card">
+    <h2>Profile</h2>
+    <p class="small">Copy this and paste it into the DS-160 Autofill box on the DS-160 site. You don't need to save it: next time, drop your new Print Application PDF here again. You can edit it here first.</p>
+    <textarea id="json" spellcheck="false" aria-label="Profile JSON"></textarea>
+    <div class="btns"><button id="copy">Copy profile</button><button class="ghost" id="again">Read another PDF</button></div>
+    <div class="status" id="copied" aria-live="polite"></div>
+   </div>
+  </div>
+ </div>
+</section>
+
+<section class="band alt">
+ <div class="wrap">
+  <h2>How to use it</h2>
+  <div class="steps">
+   <div class="step"><b>1 · Install the script once</b>Install Tampermonkey in Chrome, Edge or Firefox. In Chrome, open the extension's Details and turn on "Allow User Scripts". Then Create a new script, paste the script below, and click Save.</div>
+   <div class="step"><b>2 · Make each profile here</b>One PDF per person. Update the trip details, read the checklist, and copy the profile. No need to save it.</div>
+   <div class="step"><b>3 · Fill the DS-160</b>Start the application yourself (location, CAPTCHA, security question). In the DS-160 Autofill box, paste the profile, click Load, then Fill this page on each page. Type ID numbers, review, and click Next yourself.</div>
+  </div>
+  <p class="small" style="margin-top:16px">Source and instructions: <a href="https://github.com/rahulchoudhari/ds160-filler">github.com/rahulchoudhari/ds160-filler</a>. The script runs only on ceac.state.gov, makes no network requests, keeps the profile only until the tab is closed, and never clicks Next, Sign or Submit. Security questions are filled "No" only if every answer was No last time — read each one anyway. The form changes from time to time; anything the script misses, fill by hand.</p>
+  <div class="btns"><button id="copyScript">Copy the Tampermonkey script</button></div>
+  <div class="status" id="copiedScript" aria-live="polite"></div>
+  <details><summary>Show the script</summary><pre id="script">// ==UserScript==
+// @name         DS-160 Autofill
+// @namespace    local.ds160.autofill
+// @version      1.1
+// @description  Fills DS-160 pages from a profile you paste in. No network access. Never signs or submits.
+// @match        https://ceac.state.gov/GenNIV/*
+// @match        https://ceac.state.gov/genniv/*
+// @grant        none
+// @run-at       document-idle
+// ==/UserScript==
+//
+// HOW IT WORKS
+// 1. Click &quot;DS-160 Autofill&quot; (bottom-right) &gt; paste one person&#x27;s profile JSON &gt; Load.
+//    The profile is kept in sessionStorage only: it disappears when you close the tab.
+// 2. On each page click &quot;Fill this page&quot;. Yes/No questions and &quot;Add Another&quot; make the page
+//    reload; the script continues automatically after each reload, filling only EMPTY fields.
+// 3. Type ID numbers yourself (passport, SSN, TIN, driver&#x27;s licence). Review, then click Next.
+// It never clicks Next, Sign or Submit, and it never sends data anywhere.
+
+(function () {
+  &#x27;use strict&#x27;;
+  const KEY = &#x27;ds160_profile&#x27;, RUN = &#x27;ds160_autorun&#x27;;
+  const P = &#x27;ctl00_SiteContentPlaceHolder_FormView1_&#x27;;
+  const node = (location.search.match(/node=([^&amp;]+)/) || [])[1] || &#x27;&#x27;;
+  const $ = id =&gt; document.getElementById(P + id);
+  const sleep = ms =&gt; new Promise(r =&gt; setTimeout(r, ms));
+  const load = () =&gt; { try { return JSON.parse(sessionStorage.getItem(KEY) || &#x27;null&#x27;); } catch { return null; } };
+
+  function setSelect(el, v) {
+    const s = String(v).trim().toUpperCase();
+    const o = [...el.options].find(o =&gt; o.value === String(v)) ||
+              [...el.options].find(o =&gt; o.text.trim().toUpperCase() === s);
+    if (!o) return false;
+    if (el.value !== o.value) { el.value = o.value; el.dispatchEvent(new Event(&#x27;change&#x27;, { bubbles: true })); }
+    return true;
+  }
+  function setPlain(el, v) {
+    if (el.tagName === &#x27;SELECT&#x27;) return setSelect(el, v);
+    if (el.type === &#x27;checkbox&#x27;) { if (!!v !== el.checked) el.click(); return true; }
+    if (!el.value) { el.value = v; el.dispatchEvent(new Event(&#x27;change&#x27;, { bubbles: true })); }
+    return true;
+  }
+  // Yes/No radio: &quot;rblX&quot;: &quot;Y&quot; | &quot;N&quot;. Returns true if a click (possible postback) happened.
+  function setRadio(name, v) {
+    const el = $(name + (String(v).toUpperCase().startsWith(&#x27;Y&#x27;) ? &#x27;_0&#x27; : &#x27;_1&#x27;));
+    if (!el || el.checked) return false;
+    el.click(); return true;
+  }
+  // Repeating rows: &quot;_rows&quot;: { &quot;dtlPREV_US_VISIT&quot;: [ {field: value}, ... ] }
+  function fillRows(prefix, rows) {
+    const row = i =&gt; P + prefix + &#x27;_ctl&#x27; + String(i).padStart(2, &#x27;0&#x27;) + &#x27;_&#x27;;
+    let n = 0; while (document.querySelector(&#x27;[id^=&quot;&#x27; + row(n) + &#x27;&quot;]&#x27;)) n++;
+    for (let i = 0; i &lt; Math.min(n, rows.length); i++)
+      for (const [k, v] of Object.entries(rows[i])) {
+        const el = document.getElementById(row(i) + k); if (el) setPlain(el, v);
+      }
+    if (n &gt; 0 &amp;&amp; n &lt; rows.length) {
+      const add = document.querySelector(&#x27;[id^=&quot;&#x27; + row(n - 1) + &#x27;Insert&quot;]&#x27;);
+      if (add &amp;&amp; !add.hasAttribute(&#x27;disabled&#x27;)) { add.click(); return true; }
+    }
+    return false;
+  }
+
+  async function fillPage() {
+    const prof = load(); if (!prof) return say(&#x27;Load a profile first.&#x27;);
+    const page = prof.pages &amp;&amp; prof.pages[node];
+    if (!page) { sessionStorage.removeItem(RUN); return say(&#x27;Nothing to fill on &quot;&#x27; + node + &#x27;&quot;.&#x27;); }
+    sessionStorage.setItem(RUN, node);
+    // 1) plain fields and selects (no postback)
+    for (const [k, v] of Object.entries(page)) {
+      if (k.startsWith(&#x27;_&#x27;) || k.startsWith(&#x27;rbl&#x27;)) continue;
+      const el = $(k); if (el) setPlain(el, v);
+    }
+    // 2) yes/no answers, one at a time (some reload the page; if so, autorun continues after reload)
+    for (const [k, v] of Object.entries(page)) {
+      if (!k.startsWith(&#x27;rbl&#x27;)) continue;
+      if (setRadio(k, v)) await sleep(1500);
+    }
+    // 2b) security pages: &quot;_allNo&quot;: true answers every question on the page NO (read them first!)
+    if (page._allNo)
+      for (const el of document.querySelectorAll(&#x27;input[type=radio][id^=&quot;&#x27; + P + &#x27;&quot;][id$=&quot;_1&quot;]&#x27;))
+        if (!el.checked) { el.click(); await sleep(300); }
+    // 3) dropdowns that reveal more fields: &quot;_postback&quot;: { dropdownId: fieldItReveals }
+    for (const [dd, revealed] of Object.entries(page._postback || {})) {
+      const el = $(dd);
+      if (el &amp;&amp; el.value &amp;&amp; !$(revealed) &amp;&amp; window.__doPostBack) { window.__doPostBack(el.name, &#x27;&#x27;); return; }
+    }
+    await sleep(300);
+    for (const [k, v] of Object.entries(page)) {          // second pass for revealed fields
+      if (k.startsWith(&#x27;_&#x27;) || k.startsWith(&#x27;rbl&#x27;)) continue;
+      const el = $(k); if (el) setPlain(el, v);
+    }
+    // 4) repeating rows
+    for (const [prefix, rows] of Object.entries(page._rows || {}))
+      if (fillRows(prefix, rows)) { await sleep(2500); return fillPage(); }  // reloads; continues
+    sessionStorage.removeItem(RUN);
+    say(&#x27;Done. Type any ID numbers, review, then click Next yourself.&#x27;);
+  }
+
+  // ---------- small panel ----------
+  const box = document.createElement(&#x27;div&#x27;);
+  box.style.cssText = &#x27;position:fixed;right:12px;bottom:12px;z-index:99999;background:#fff;border:2px solid #1d3d6b;border-radius:8px;padding:8px;font:13px sans-serif;width:260px;box-shadow:0 2px 8px #0003&#x27;;
+  box.innerHTML = &#x27;&lt;b&gt;DS-160 Autofill&lt;/b&gt; &lt;span id=&quot;d6who&quot; style=&quot;color:#555&quot;&gt;&lt;/span&gt;&lt;br&gt;&#x27; +
+    &#x27;&lt;button id=&quot;d6fill&quot; style=&quot;margin:6px 0;width:100%&quot;&gt;Fill this page&lt;/button&gt;&#x27; +
+    &#x27;&lt;details&gt;&lt;summary&gt;Load / clear profile&lt;/summary&gt;&#x27; +
+    &#x27;&lt;textarea id=&quot;d6json&quot; rows=&quot;4&quot; style=&quot;width:100%&quot; placeholder=&quot;Paste profile JSON&quot;&gt;&lt;/textarea&gt;&#x27; +
+    &#x27;&lt;button id=&quot;d6load&quot;&gt;Load&lt;/button&gt; &lt;button id=&quot;d6clear&quot;&gt;Clear&lt;/button&gt;&lt;/details&gt;&#x27; +
+    &#x27;&lt;div id=&quot;d6msg&quot; style=&quot;color:#1d3d6b;margin-top:4px&quot;&gt;&lt;/div&gt;&#x27;;
+  document.body.appendChild(box);
+  const say = m =&gt; { document.getElementById(&#x27;d6msg&#x27;).textContent = m; };
+  const who = () =&gt; { const p = load(); document.getElementById(&#x27;d6who&#x27;).textContent = p ? &#x27;(&#x27; + p.person + &#x27;)&#x27; : &#x27;(no profile)&#x27;; };
+  document.getElementById(&#x27;d6fill&#x27;).onclick = fillPage;
+  document.getElementById(&#x27;d6load&#x27;).onclick = () =&gt; {
+    try { const p = JSON.parse(document.getElementById(&#x27;d6json&#x27;).value); if (!p.pages) throw 0;
+      sessionStorage.setItem(KEY, JSON.stringify(p)); document.getElementById(&#x27;d6json&#x27;).value = &#x27;&#x27;; who(); say(&#x27;Loaded &#x27; + p.person + &#x27;.&#x27;);
+    } catch { say(&#x27;That is not a valid profile.&#x27;); }
+  };
+  document.getElementById(&#x27;d6clear&#x27;).onclick = () =&gt; { sessionStorage.removeItem(KEY); sessionStorage.removeItem(RUN); who(); say(&#x27;Cleared.&#x27;); };
+  who();
+  if (sessionStorage.getItem(RUN) === node) setTimeout(fillPage, 600);   // continue after a postback
+})();
+</pre></details>
+ </div>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+<script>
+// Shared extractor: pdf.js text items -> ordered [{label, value}] entries.
+// Layout of the CEAC "Print Application" PDF: labels start at x~37, answers at x~325 (or far
+// right on security questions). A wrapped question continues ~9pt lower; a new row is ~16pt lower.
+function itemsToEntries(pages) {
+  const entries = [];
+  let cur = null;
+  for (const pg of pages) {
+    const its = pg.items.filter(i => i.str && i.str.trim() && i.y > 30 && i.y < pg.height - 20);
+    its.sort((a, b) => b.y - a.y || a.x - b.x);
+    const lines = [];
+    for (const it of its) {
+      const ln = lines.find(l => Math.abs(l.y - it.y) <= 2.5);
+      if (ln) ln.items.push(it); else lines.push({ y: it.y, items: [it] });
+    }
+    let prevY = null;
+    for (const ln of lines) {
+      ln.items.sort((a, b) => a.x - b.x);
+      const text = ln.items.map(i => i.str).join(' ').replace(/\s+/g, ' ').trim();
+      if (/^Your Personal Copy/i.test(text) || text === 'Next') { prevY = null; continue; }
+      let split = ln.items.length;
+      for (let k = 1; k < ln.items.length; k++) {
+        const prevEnd = ln.items[k - 1].x + ln.items[k - 1].w, gap = ln.items[k].x - prevEnd;
+        if ((ln.items[k].x >= 318 && gap >= 4) || gap > 25) { split = k; break; }
+      }
+      const join = a => a.map(i => i.str).join(' ').replace(/\s+/g, ' ').trim();
+      const L = join(ln.items.slice(0, split)), V = join(ln.items.slice(split));
+      const close = prevY !== null && prevY - ln.y < 12.5;
+      prevY = ln.y;
+      if (ln.items[0].x > 200) {                       // answer-only line: wrapped answer
+        if (cur) { cur.value = cur.value ? cur.value + '\n' + text : text; }
+        continue;
+      }
+      if (cur && close && !/[:?]\s*$/.test(cur.label)) {   // wrapped question text
+        cur.label += ' ' + L; if (V) cur.value = cur.value ? cur.value + ' ' + V : V; continue;
+      }
+      cur = { label: L, value: V };
+      entries.push(cur);
+    }
+  }
+  return entries;
+}
+// = { itemsToEntries };
+
+// entries [{label,value}] from a CEAC "Print Application" PDF -> autofill profile.
+// ID numbers (passport, SSN, TIN, licence, visa, national ID) are never copied.
+function entriesToProfile(entries, today) {
+  today = today || new Date();
+  const MON = { JANUARY: 'JAN', FEBRUARY: 'FEB', MARCH: 'MAR', APRIL: 'APR', MAY: 'MAY', JUNE: 'JUN', JULY: 'JUL', AUGUST: 'AUG', SEPTEMBER: 'SEP', OCTOBER: 'OCT', NOVEMBER: 'NOV', DECEMBER: 'DEC' };
+  const pages = {}, review = [], unmapped = [];
+  const pg = n => (pages[n] = pages[n] || {});
+  const rows = (n, key) => { const p = pg(n); p._rows = p._rows || {}; return (p._rows[key] = p._rows[key] || []); };
+  const yn = v => /^Y/i.test(v) ? 'Y' : 'N';
+  const NA = v => /^(DOES NOT APPLY|DO NOT KNOW|N\/A)$/i.test((v || '').trim());
+  const date = v => { const m = (v || '').trim().match(/^(\d{1,2}) ([A-Z]+) (\d{4})$/i); return m ? [m[1].padStart(2, '0'), MON[m[2].toUpperCase()] || m[2].slice(0, 3).toUpperCase(), m[3]] : null; };
+  const name = v => { const i = (v || '').indexOf(','); return i < 0 ? [v.trim(), ''] : [v.slice(0, i).trim(), v.slice(i + 1).trim()]; };
+  const unit = u => ({ 'YEAR(S)': 'Year(s)', 'MONTH(S)': 'Month(s)', 'WEEK(S)': 'Week(s)', 'DAY(S)': 'Day(s)' })[u.toUpperCase()] || 'Less Than 24 Hours';
+  const los = v => { const m = (v || '').match(/^(\d+)\s+(\S+)/); return m ? [m[1], unit(m[2])] : null; };
+  const cityStateZip = v => { const m = (v || '').match(/^(.*?),\s*([A-Z .]+?)\s+(\d{5}(?:-\d{4})?)$/i); return m ? [m[1].trim(), m[2].trim(), m[3]] : null; };
+  const setDate = (p, keys, v) => { const d = date(v); if (d) keys.forEach((k, i) => pg(p)[k] = d[i]); return d; };
+  const allNo = { 1: true, 2: true, 3: true, 4: true, 5: true };
+  let ctx = '', person = '', secPart = 0, social = 'dtlSocial', petition = '', lastVisitIdx = -1;
+  const prep = []; let passportExpired = false;
+  let empRow = null, eduRow = null, visitRow = null, relRow = null, compRow = null, socRow = null;
+
+  // wrapped answers arrive as lines joined by \n. CEAC hard-wraps long text at ~30 chars, splitting words.
+  const unwrap = raw => (raw || '').split('\n').reduce((acc, line, i, arr) => {
+    if (!i) return line; const prev = arr[i - 1];
+    return acc + (prev.length >= 29 && /[A-Z]$/i.test(prev) && /^[A-Z]/i.test(line) ? '' : ' ') + line; }, '').trim();
+  const homeAddr = {};
+  for (const { label: rawL, value: raw } of entries) {
+    const lines = (raw || '').split('\n'), v = unwrap(raw);
+    const L = rawL.replace(/\s+/g, ' ').trim();
+    const k = L.replace(/\s*\(\d+\)\s*:?\s*$/, '').replace(/:\s*$/, '').replace(/:\s*\(\d+\)$/, '').trim();
+    const n = (L.match(/\((\d+)\)/) || [])[1];
+    // ---- section anchors / context ----
+    if (/^Security and Background/i.test(L)) { ctx = 'sec'; secPart = 1; continue; }
+    if (/^Temporary Work Visa/i.test(L)) { ctx = 'tw'; continue; }
+    if (/^Preparer of Application/i.test(L)) { ctx = 'prep'; continue; }
+    if (/^Location Information/i.test(L)) { ctx = 'loc'; continue; }
+    if (/Consular Electronic Application Center/.test(L + ' ' + v)) continue;
+    if (ctx === 'prep') { if (v && !/^Did anyone assist/.test(L)) { prep.push(L.replace(/:$/, '') + ': ' + v); continue; } }
+    if (ctx === 'sec') {
+      if (!v) continue;
+      // CEAC order: part1 disease..drug, part2 arrested..voted? we only need: any YES?
+      if (/^Y/i.test(v)) { allNo.any = false; review.push('Security question answered YES last time: "' + L.slice(0, 80) + '…" — answer this page by hand.'); }
+      continue;
+    }
+    switch (true) {
+      // ---------- Personal 1 ----------
+      case k === 'Name Provided': { const [s, g] = name(v); person = g.split(' ')[0] || s; Object.assign(pg('Personal1'), { tbxAPP_SURNAME: s, tbxAPP_GIVEN_NAME: g }); break; }
+      case k === 'Full Name in Native Language': NA(v) ? pg('Personal1').cbexAPP_FULL_NAME_NATIVE_NA = true : pg('Personal1').tbxAPP_FULL_NAME_NATIVE = v; break;
+      case k === 'Other Names Used': pg('Personal1').rblOtherNames = yn(v); if (yn(v) === 'Y') review.push('Other names used: YES — add them by hand.'); break;
+      case k === 'Telecode Name Used': pg('Personal1').rblTelecodeQuestion = yn(v); break;
+      case k === 'Sex': pg('Personal1').ddlAPP_GENDER = v; break;
+      case k === 'Marital Status': pg('Personal1').ddlAPP_MARITAL_STATUS = v; break;
+      case k === 'Date of Birth': setDate('Personal1', ['ddlDOBDay', 'ddlDOBMonth', 'tbxDOBYear'], v); break;
+      case k === 'Place of Birth': { const p = v.split(',').map(s => s.trim()); const o = pg('Personal1'); o.tbxAPP_POB_CITY = p[0]; o.ddlAPP_POB_CNTRY = p[p.length - 1]; if (p.length > 2) o.tbxAPP_POB_ST_PROVINCE = p.slice(1, -1).join(', '); else o.cbexAPP_POB_ST_PROVINCE_NA = true; break; }
+      // ---------- Personal 2 ----------
+      case /^Country\/Region of Origin/.test(k): pg('Personal2').ddlAPP_NATL = v; break;
+      case /^Do you hold or have you held any nationality/.test(L): pg('Personal2').rblAPP_OTH_NATL_IND = yn(v); if (yn(v) === 'Y') review.push('Other nationality: YES — fill those details by hand.'); break;
+      case /^Are you a permanent resident of a country/.test(L): pg('Personal2').rblPermResOtherCntryInd = yn(v); if (yn(v) === 'Y') review.push('Permanent resident elsewhere: YES — fill by hand.'); break;
+      case k === 'National Identification Number': if (NA(v)) pg('Personal2').cbexAPP_NATIONAL_ID_NA = true; break;
+      case k === 'U.S. Social Security Number': if (NA(v)) pg('Personal2').cbexAPP_SSN_NA = true; break;
+      case k === 'U.S. Taxpayer ID Number': if (NA(v)) pg('Personal2').cbexAPP_TAX_ID_NA = true; break;
+      // ---------- Address & phone ----------
+      case k === 'Home Address': ctx = 'home'; pg('AddressPhone').tbxAPP_ADDR_LN1 = homeAddr.street = v; break;
+      case k === 'Same Mailing Address?' || k === 'Same Mailing Address': pg('AddressPhone').rblMailingAddrSame = yn(v); if (yn(v) === 'N') review.push('Mailing address differs from home — fill it by hand.'); break;
+      case k === 'Primary Phone Number': pg('AddressPhone').tbxAPP_HOME_TEL = v; break;
+      case k === 'Secondary Phone Number' && ctx === 'home': NA(v) ? pg('AddressPhone').cbexAPP_MOBILE_TEL_NA = true : pg('AddressPhone').tbxAPP_MOBILE_TEL = v; break;
+      case k === 'Work Phone Number' && ctx === 'home': NA(v) ? pg('AddressPhone').cbexAPP_BUS_TEL_NA = true : pg('AddressPhone').tbxAPP_BUS_TEL = v; break;
+      case /^Do you have any additional phone numbers/.test(L): pg('AddressPhone').rblAddPhone = yn(v); break;
+      case /^Additional Phone Number/.test(L): rows('AddressPhone', 'dtlAddPhone').push({ tbxAddPhoneInfo: v }); break;
+      case k === 'Email Address' && ctx === 'home': pg('AddressPhone').tbxAPP_EMAIL_ADDR = v; break;
+      case /^Do you have any additional email/.test(L): pg('AddressPhone').rblAddEmail = yn(v); break;
+      case /^Additional Email/.test(L): rows('AddressPhone', 'dtlAddEmail').push({ tbxAddEmailInfo: v }); break;
+      case /^Do you have any additional social media/.test(L): pg('AddressPhone').rblAddSocial = yn(v); social = 'dtlAddSocial'; break;
+      case /^Social Media Platform/.test(L):
+        socRow = social === 'dtlSocial' ? { ddlSocialMedia: v } : { tbxAddSocialPlat: v };
+        rows('AddressPhone', social).push(socRow); break;
+      case /^Social Media Identifier/.test(L): if (socRow && v) socRow[social === 'dtlSocial' ? 'tbxSocialMediaIdent' : 'tbxAddSocialHand'] = v; break;
+      // ---------- Passport ----------
+      case k === 'Passport/Travel Document Type': pg('PptVisa').ddlPPT_TYPE = v; break;
+      case k === 'Passport Book Number': if (NA(v)) pg('PptVisa').cbexPPT_BOOK_NUM_NA = true; break;
+      case /^Country\/Authority that Issued/.test(k): pg('PptVisa').ddlPPT_ISSUED_CNTRY = v; break;
+      case k === 'City Where Issued': pg('PptVisa').tbxPPT_ISSUED_IN_CITY = v; break;
+      case k === 'State/Province Where Issued': pg('PptVisa').tbxPPT_ISSUED_IN_STATE = v; break;
+      case k === 'Country/Region Where Issued': pg('PptVisa').ddlPPT_ISSUED_IN_CNTRY = v; break;
+      case k === 'Issuance Date': setDate('PptVisa', ['ddlPPT_ISSUED_DTEDay', 'ddlPPT_ISSUED_DTEMonth', 'tbxPPT_ISSUEDYear'], v); break;
+      case k === 'Expiration Date': { const d = setDate('PptVisa', ['ddlPPT_EXPIRE_DTEDay', 'ddlPPT_EXPIRE_DTEMonth', 'tbxPPT_EXPIREYear'], v);
+        if (d && new Date(v) < new Date(today.getTime() + 183 * 864e5)) passportExpired = true;
+        if (d && new Date(v) < new Date(today.getTime() + 183 * 864e5)) review.push('Passport expired or expires within 6 months (' + v + ') — update all passport details.'); break; }
+      case /^Have you ever lost a passport/.test(L): pg('PptVisa').rblLOST_PPT_IND = yn(v); break;
+      // ---------- Travel ----------
+      case /^Purpose of Trip to the U\.S\./.test(L): ctx = 'travel'; pg('Travel').dlPrincipalAppTravel_ctl00_ddlPurposeOfTrip = v; break;
+      case k === 'Specify': pg('Travel').dlPrincipalAppTravel_ctl00_ddlOtherPurpose = v; break;
+      case k === 'Principal Applicant Name': { const [s, g] = name(v); Object.assign(pg('Travel'), { dlPrincipalAppTravel_ctl00_tbxPrincipleAppSurname: s, dlPrincipalAppTravel_ctl00_tbxPrincipleAppGivenName: g }); break; }
+      case k === 'Application Receipt/Petition Number': petition = true; break;   // new every application: never copied
+      case /^Have you made specific travel plans/.test(L): pg('Travel').rblSpecificTravel = yn(v); break;
+      case k === 'Intended Date of Arrival': setDate('Travel', ['ddlTRAVEL_DTEDay', 'ddlTRAVEL_DTEMonth', 'tbxTRAVEL_DTEYear'], v); break;
+      case /^Intended Length of Stay/.test(k): { const l = los(v); if (l) { Object.assign(pg('Travel'), { tbxTRAVEL_LOS: l[0], ddlTRAVEL_LOS_CD: l[1] }); if (l[1] === 'Year(s)' && +l[0] > 10) review.push('Length of stay was "' + v + '" last time — that looks like a mistake; fix it.'); } break; }
+      case /^Address where you will stay/.test(k): pg('Travel').tbxStreetAddress1 = v; break;
+      case k === 'City, State, Postal/Zip Code' && ctx === 'travel': { const c = cityStateZip(v); if (c) Object.assign(pg('Travel'), { tbxCity: c[0], ddlTravelState: c[1], tbZIPCode: c[2] }); break; }
+      case /^Person\/Entity Paying/.test(k): pg('Travel').ddlWhoIsPaying = v; break;
+      // ---------- Companions ----------
+      case /^Are there other persons traveling with you/.test(L): pg('TravelCompanions').rblOtherPersonsTravelingWithYou = yn(v); break;
+      case /^Are you traveling as part of a group/.test(L): pg('TravelCompanions').rblGroupTravel = yn(v); if (yn(v) === 'Y') review.push('Group travel: YES — enter the group name by hand.'); break;
+      case /^Name \(\d+\)/.test(L) && ctx === 'travel': { const [s, g] = name(v); compRow = { tbxSurname: s, tbxGivenName: g }; rows('TravelCompanions', 'dlTravelCompanions').push(compRow); break; }
+      case k === 'Relationship to You' && ctx === 'travel' && !!compRow: compRow.ddlTCRelationship = v; compRow = null; break;
+      // ---------- Previous US travel ----------
+      case /^Have you ever been in the U\.S\./.test(L): pg('PreviousUSTravel').rblPREV_US_TRAVEL_IND = yn(v); break;
+      case /^Date Arrived/.test(L): { const d = date(v); visitRow = d ? { ddlPREV_US_VISIT_DTEDay: d[0], ddlPREV_US_VISIT_DTEMonth: d[1], tbxPREV_US_VISIT_DTEYear: d[2] } : {}; rows('PreviousUSTravel', 'dtlPREV_US_VISIT').push(visitRow); break; }
+      case k === 'Length of Stay' && !!visitRow: { const l = los(v); if (l) Object.assign(visitRow, { tbxPREV_US_VISIT_LOS: l[0], ddlPREV_US_VISIT_LOS_CD: l[1] }); break; }
+      case /^Do you or did you hold a U\.S\. Driver/.test(L): pg('PreviousUSTravel').rblPREV_US_DRIVER_LIC_IND = yn(v); break;
+      case /^State of Driver/.test(L): pg('PreviousUSTravel').dtlUS_DRIVER_LICENSE_ctl00_ddlUS_DRIVER_LICENSE_STATE = v; break;
+      case /^Have you ever been issued a U\.S\. Visa/.test(L): pg('PreviousUSTravel').rblPREV_VISA_IND = yn(v); break;
+      case /^Are you applying for the same type of visa/.test(L): pg('PreviousUSTravel').rblPREV_VISA_SAME_TYPE_IND = yn(v); break;
+      case /^Are you applying in the same country/.test(L): pg('PreviousUSTravel').rblPREV_VISA_SAME_CNTRY_IND = yn(v); break;
+      case /^Have you been ten-printed/.test(L): pg('PreviousUSTravel').rblPREV_VISA_TEN_PRINT_IND = yn(v); break;
+      case /^Has your U\.S\. Visa ever been lost/.test(L): pg('PreviousUSTravel').rblPREV_VISA_LOST_IND = yn(v); break;
+      case /^Has your U\.S\. Visa ever been cancelled/.test(L): pg('PreviousUSTravel').rblPREV_VISA_CANCELLED_IND = yn(v); break;
+      case /^Have you ever been refused a U\.S\. Visa/.test(L): pg('PreviousUSTravel').rblPREV_VISA_REFUSED_IND = yn(v); if (yn(v) === 'Y') review.push('Previous refusal: YES — explain by hand.'); break;
+      case /^Has anyone ever filed an immigrant petition/.test(L): pg('PreviousUSTravel').rblIV_PETITION_IND = yn(v); break;
+      // ---------- US contact ----------
+      case /^Contact Person Name in the U\.S\./.test(k): ctx = 'poc'; if (NA(v)) pg('USContact').cbxUS_POC_NAME_NA = true; else { const [s, g] = name(v); Object.assign(pg('USContact'), { tbxUS_POC_SURNAME: s, tbxUS_POC_GIVEN_NAME: g }); } break;
+      case /^Organization Name in the U\.S\./.test(k): NA(v) ? pg('USContact').cbxUS_POC_ORG_NA_IND = true : pg('USContact').tbxUS_POC_ORGANIZATION = v; break;
+      case k === 'Relationship to You' && ctx === 'poc': pg('USContact').ddlUS_POC_REL_TO_APP = v; break;
+      case /^U\.S\. Contact Address/.test(k): { const c = lines.length > 1 ? cityStateZip(lines[lines.length - 1]) : null; const m = c ? [0, lines.slice(0, -1).join(' '), c[0], c[1], c[2]] : null;
+        if (m) Object.assign(pg('USContact'), { tbxUS_POC_ADDR_LN1: m[1], tbxUS_POC_ADDR_CITY: m[2].trim(), ddlUS_POC_ADDR_STATE: m[3], tbxUS_POC_ADDR_POSTAL_CD: m[4] });
+        else { pg('USContact').tbxUS_POC_ADDR_LN1 = v; review.push('US contact address could not be split into street/city/state/ZIP — check it.'); } break; }
+      case k === 'Phone Number' && ctx === 'poc': pg('USContact').tbxUS_POC_HOME_TEL = v; break;
+      case k === 'Email Address' && ctx === 'poc': NA(v) ? pg('USContact').cbexUS_POC_EMAIL_ADDR_NA = true : pg('USContact').tbxUS_POC_EMAIL_ADDR = v; break;
+      // ---------- Family ----------
+      case /^Father's Surnames/.test(k): ctx = 'fam'; NA(v) ? pg('Relatives').cbxFATHER_SURNAME_UNK_IND = true : pg('Relatives').tbxFATHER_SURNAME = v; break;
+      case /^Father's Given Names/.test(k): NA(v) ? pg('Relatives').cbxFATHER_GIVEN_NAME_UNK_IND = true : pg('Relatives').tbxFATHER_GIVEN_NAME = v; break;
+      case /^Father's Date of Birth/.test(k): NA(v) ? pg('Relatives').cbxFATHER_DOB_UNK_IND = true : setDate('Relatives', ['ddlFathersDOBDay', 'ddlFathersDOBMonth', 'tbxFathersDOBYear'], v); break;
+      case /^Is your father in the U\.S\./.test(L): pg('Relatives').rblFATHER_LIVE_IN_US_IND = yn(v); ctx = 'father'; break;
+      case /^Mother's Surnames/.test(k): ctx = 'fam'; NA(v) ? pg('Relatives').cbxMOTHER_SURNAME_UNK_IND = true : pg('Relatives').tbxMOTHER_SURNAME = v; break;
+      case /^Mother's Given Names/.test(k): NA(v) ? pg('Relatives').cbxMOTHER_GIVEN_NAME_UNK_IND = true : pg('Relatives').tbxMOTHER_GIVEN_NAME = v; break;
+      case /^Mother's Date of Birth/.test(k): NA(v) ? pg('Relatives').cbxMOTHER_DOB_UNK_IND = true : setDate('Relatives', ['ddlMothersDOBDay', 'ddlMothersDOBMonth', 'tbxMothersDOBYear'], v); break;
+      case /^Is your mother in the U\.S\./.test(L): pg('Relatives').rblMOTHER_LIVE_IN_US_IND = yn(v); ctx = 'mother'; break;
+      case k === 'Status' && (ctx === 'father' || ctx === 'mother'): pg('Relatives')[ctx === 'father' ? 'ddlFATHER_US_STATUS' : 'ddlMOTHER_US_STATUS'] = v; break;
+      case /^Do you have any immediate relatives/.test(L): ctx = 'rel'; pg('Relatives').rblUS_IMMED_RELATIVE_IND = yn(v); break;
+      case /^Relative Name/.test(L): { ctx = 'rel'; const [s, g] = name(v); relRow = { tbxUS_REL_SURNAME: s, tbxUS_REL_GIVEN_NAME: g }; rows('Relatives', 'dlUSRelatives').push(relRow); break; }
+      case k === 'Relationship to you' && ctx === 'rel' && !!relRow: relRow.ddlUS_REL_TYPE = v; break;
+      case k === 'Status' && ctx === 'rel' && !!relRow: relRow.ddlUS_REL_STATUS = v; break;
+      case /^Spouse's Full Name/.test(k): { ctx = 'spouse'; const [s, g] = name(v); Object.assign(pg('Spouse'), { tbxSpouseSurname: s, tbxSpouseGivenName: g }); break; }
+      case /^Spouse's Date of Birth/.test(k): setDate('Spouse', ['ddlDOBDay', 'ddlDOBMonth', 'tbxDOBYear'], v); break;
+      case /^Spouse's Country\/Region of Origin/.test(k): pg('Spouse').ddlSpouseNatDropDownList = v; break;
+      case /^Spouse's City of Birth/.test(k): NA(v) ? pg('Spouse').cbexSPOUSE_POB_CITY_NA = true : pg('Spouse').tbxSpousePOBCity = v; break;
+      case /^Spouse's Country\/Region of Birth/.test(k): pg('Spouse').ddlSpousePOBCountry = v; break;
+      case /^Spouse.s Address/.test(k): pg('Spouse').ddlSpouseAddressType = v.replace(/\w\S*/g, w => w[0] + w.slice(1).toLowerCase()); if (!/^SAME AS/i.test(v)) review.push('Spouse address: "' + v + '" — check the spouse address on the form.'); break;
+      // ---------- Work / education ----------
+      case k === 'Primary Occupation': ctx = 'work'; pg('WorkEducation1').ddlPresentOccupation = v;
+        if (!/HOMEMAKER|RETIRED|NOT EMPLOYED|CHILD/i.test(v)) pg('WorkEducation1')._postback = { ddlPresentOccupation: 'tbxEmpSchName' }; break;
+      case k === 'Present Employer or School Name': ctx = 'work'; pg('WorkEducation1').tbxEmpSchName = v; break;
+      case k === 'Monthly Salary in Local Currency (if employed)': pg('WorkEducation1').tbxCURR_MONTHLY_SALARY = v.replace(/[^\d.]/g, ''); break;
+      case /^Briefly Describe your Duties/i.test(k) && ctx === 'work': pg('WorkEducation1').tbxDescribeDuties = v; break;
+      case /^Were you previously employed/.test(L): pg('WorkEducation2').rblPreviouslyEmployed = yn(v); break;
+      case /^Employer Name/.test(L): ctx = 'emp'; empRow = { tbEmployerName: v }; rows('WorkEducation2', 'dtlPrevEmpl').push(empRow); break;
+      case k === 'Employer Address' && !!empRow: empRow.tbEmployerStreetAddress1 = v; break;
+      case k === 'Telephone Number' && !!empRow: empRow.tbEmployerPhone = v; break;
+      case k === 'Job Title' && !!empRow: empRow.tbJobTitle = v; break;
+      case /^Supervisor's Surname/.test(k) && !!empRow: NA(v) ? empRow.cbxSupervisorSurname_NA = true : empRow.tbSupervisorSurname = v; break;
+      case /^Supervisor's Given Name/.test(k) && !!empRow: NA(v) ? empRow.cbxSupervisorGivenName_NA = true : empRow.tbSupervisorGivenName = v; break;
+      case k === 'Employment Date From' && !!empRow: { const d = date(v); if (d) Object.assign(empRow, { ddlEmpDateFromDay: d[0], ddlEmpDateFromMonth: d[1], tbxEmpDateFromYear: d[2] }); break; }
+      case k === 'Employment Date To' && !!empRow: { const d = date(v); if (d) Object.assign(empRow, { ddlEmpDateToDay: d[0], ddlEmpDateToMonth: d[1], tbxEmpDateToYear: d[2] }); break; }
+      case /^Briefly describe your duties/i.test(k) && ctx === 'emp' && !!empRow: empRow.tbDescribeDuties = v; break;
+      case /^Have you attended any educational institutions/.test(L): pg('WorkEducation2').rblOtherEduc = yn(v); break;
+      case /^Name of Institution/.test(L): ctx = 'edu'; eduRow = { tbxSchoolName: v }; rows('WorkEducation2', 'dtlPrevEduc').push(eduRow); break;
+      case k === 'Address of Institution' && !!eduRow: eduRow.tbxSchoolAddr1 = lines[0].trim(); if (lines.length > 1) eduRow.tbxSchoolAddr2 = lines.slice(1).join(' ').trim(); break;
+      case k === 'Course of Study' && !!eduRow: eduRow.tbxSchoolCourseOfStudy = v; break;
+      case k === 'Date of Attendance From' && !!eduRow: { const d = date(v); if (d) Object.assign(eduRow, { ddlSchoolFromDay: d[0], ddlSchoolFromMonth: d[1], tbxSchoolFromYear: d[2] }); break; }
+      case k === 'Date of Attendance To' && !!eduRow: { const d = date(v); if (d) Object.assign(eduRow, { ddlSchoolToDay: d[0], ddlSchoolToMonth: d[1], tbxSchoolToYear: d[2] }); break; }
+      // shared address lines (City/State/ZIP/Country) by context
+      case ['City', 'State/Province', 'Postal Zone/ZIP Code', 'Postal Zone/Zip Code', 'Country/Region', 'Address', 'Work Phone Number'].includes(k): {
+        const f = { home: ['AddressPhone', { City: 'tbxAPP_ADDR_CITY', 'State/Province': 'tbxAPP_ADDR_STATE', Zip: 'tbxAPP_ADDR_POSTAL_CD', 'Country/Region': 'ddlCountry' }],
+                    work: ['WorkEducation1', { Address: 'tbxEmpSchAddr1', City: 'tbxEmpSchCity', 'State/Province': 'tbxWORK_EDUC_ADDR_STATE', Zip: 'tbxWORK_EDUC_ADDR_POSTAL_CD', 'Country/Region': 'ddlEmpSchCountry', 'Work Phone Number': 'tbxWORK_EDUC_TEL' }],
+                    emp: [null, { City: 'tbEmployerCity', 'State/Province': 'tbxPREV_EMPL_ADDR_STATE', Zip: 'tbxPREV_EMPL_ADDR_POSTAL_CD', 'Country/Region': 'DropDownList2' }],
+                    edu: [null, { City: 'tbxSchoolCity', 'State/Province': 'tbxEDUC_INST_ADDR_STATE', Zip: 'tbxEDUC_INST_POSTAL_CD', 'Country/Region': 'ddlSchoolCountry' }] }[ctx];
+        const kk = /^Postal/.test(k) ? 'Zip' : k;
+        if (!f || !f[1][kk]) { unmapped.push(L + ' ' + v); break; }
+        const target = f[0] ? pg(f[0]) : (ctx === 'emp' ? empRow : eduRow);
+        if (target) { const id = f[1][kk]; if (NA(v) && /STATE|POSTAL|ZIP/i.test(id)) target[id.replace(/^tbx?/, m => 'cbx').replace(/^cbxAPP/, 'cbexAPP')] = true; else target[id] = v; }
+        break; }
+      // ---------- Additional ----------
+      case /^Do you belong to a clan or tribe/.test(L): pg('WorkEducation3').rblCLAN_TRIBE_IND = yn(v); break;
+      case /^Language Name/.test(L): { const r = rows('WorkEducation3', 'dtlLANGUAGES'); if (!r.some(x => x.tbxLANGUAGE_NAME === v)) r.push({ tbxLANGUAGE_NAME: v }); break; }
+      case /^Have you traveled to any countries/.test(L): pg('WorkEducation3').rblCOUNTRIES_VISITED_IND = yn(v); review.push('Countries visited in the last 5 years — update this answer.'); break;
+      case /^Have you belonged to, contributed to/.test(L): pg('WorkEducation3').rblORGANIZATION_IND = yn(v); break;
+      case /^Do you have any specialized skills/.test(L): pg('WorkEducation3').rblSPECIALIZED_SKILLS_IND = yn(v); break;
+      case /^Have you ever served in the military/.test(L): pg('WorkEducation3').rblMILITARY_SERVICE_IND = yn(v); break;
+      case /^Have you ever served in, been a member of/.test(L): pg('WorkEducation3').rblINSURGENT_ORG_IND = yn(v); break;
+      // ---------- Temporary work ----------
+      case /^Name of Person\/Company who Filed Petition/.test(k): pg('TemporaryWork').tbxNameOfPetitioner = v; break;
+      case k === 'Name of Employer' && ctx === 'tw': pg('TemporaryWork').tbxEmployerName = v; break;
+      case k === 'Street Address' && ctx === 'tw': { const c = lines.length > 1 ? cityStateZip(lines[lines.length - 1]) : null; const m = c ? [0, lines.slice(0, -1).join(' '), c[0], c[1], c[2]] : null;
+        if (m) Object.assign(pg('TemporaryWork'), { tbxEmpStreetAddress1: m[1], tbxEmpCity: m[2].trim(), ddlEmpState: m[3], tbxZIPCode: m[4] }); else pg('TemporaryWork').tbxEmpStreetAddress1 = v; break; }
+      case k === 'Phone Number' && ctx === 'tw': pg('TemporaryWork').tbxTEMP_WORK_TEL = v; break;
+      case /^Monthly Income/.test(k): pg('TemporaryWork').tbxEmpSalaryInUSD = v.replace(/[^\d.]/g, ''); break;
+      case k === 'Current Location': review.push('Last time you applied at: ' + v + ' — pick the location on the DS-160 start page.'); break;
+      case /^Did anyone assist you/.test(L): ctx = 'prep'; break;
+      // ignore: ID numbers, headings, signatures
+      case /Number\b.*:|License Number|Visa Number|Date Last Visa was Issued|Confirmation Number|Photo|Telecode/i.test(L) || !v: break;
+      default: unmapped.push(L + ' ' + v);
+    }
+  }
+  const ap = pages.AddressPhone || {}, tr = pages.Travel;
+  if (tr && tr.tbxStreetAddress1 && !tr.tbxCity && tr.tbxStreetAddress1 === ap.tbxAPP_ADDR_LN1 && /UNITED STATES/i.test(ap.ddlCountry || ''))
+    Object.assign(tr, { tbxCity: ap.tbxAPP_ADDR_CITY, ddlTravelState: ap.tbxAPP_ADDR_STATE, tbZIPCode: ap.tbxAPP_ADDR_POSTAL_CD });
+  if (Object.keys(allNo).length && allNo.any !== false) for (let i = 1; i <= 5; i++) pages['SecurityandBackground' + i] = { _allNo: true };
+  // things that are always out of date
+  if (pages.Travel) review.unshift('Update: intended arrival date and length of stay (copied from last time).');
+  if (petition) review.unshift('Enter this application\'s receipt/petition number (the old one is not copied).');
+  const v = pages.PreviousUSTravel && pages.PreviousUSTravel._rows && pages.PreviousUSTravel._rows.dtlPREV_US_VISIT;
+  if (v && v.length) review.push('Add US visits made after the last form (the form keeps your last 5) and fix the length of the latest one.');
+  if (pages.WorkEducation1 && pages.WorkEducation1.tbxCURR_MONTHLY_SALARY) review.push('Update: current employer, monthly salary and duties if they changed.');
+  if (prep.length) review.push('Preparer (sign page, fill by hand): ' + prep.join('; '));
+  review.push('Type on the form yourself: passport number, SSN/ITIN and driver\'s licence number. Enter your most recent visa\'s issue date and number above, or type them on the form.');
+  return { person, passportExpired, created: today.toISOString().slice(0, 10), source: 'DS-160 Print Application PDF', review, unmapped, pages };
+}
+// = { entriesToProfile };
+
+</script>
+<script>
+{
+  const $ = id => document.getElementById(id);
+  const drop = $('drop'), file = $('file'), status = $('status');
+  let profile = null;
+  const setStatus = (t, err) => { status.textContent = t; status.className = 'status' + (err ? ' err' : ''); };
+
+  async function readPdf(f) {
+    if (!f) return;
+    if (!/pdf$/i.test(f.type) && !/\.pdf$/i.test(f.name)) return setStatus('That is not a PDF.', true);
+    if (!window.pdfjsLib) return setStatus('The PDF reader could not load. Check your connection and reload the page.', true);
+    setStatus('Reading ' + f.name + '…');
+    try {
+      const doc = await pdfjsLib.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise;
+      const pages = [];
+      for (let p = 1; p <= doc.numPages; p++) {
+        const page = await doc.getPage(p), vp = page.getViewport({ scale: 1 }), tc = await page.getTextContent();
+        pages.push({ height: vp.height, items: tc.items.map(i => ({ x: i.transform[4], y: i.transform[5], w: i.width, str: i.str })) });
+      }
+      const entries = itemsToEntries(pages);
+      if (!entries.some(e => /^Name Provided/.test(e.label))) return setStatus('This does not look like a DS-160 "Print Application" PDF. On the CEAC site, retrieve the application and use Print Application, then save as PDF.', true);
+      profile = entriesToProfile(entries, new Date());
+      show();
+      setStatus('Read ' + entries.length + ' answers from ' + f.name + '.');
+    } catch (e) { setStatus('Could not read that PDF: ' + (e && e.message || e), true); }
+  }
+
+  function show() {
+    $('result').classList.remove('hide');
+    $('who').textContent = 'Profile for ' + (profile.person || 'applicant');
+    $('meta').textContent = Object.keys(profile.pages).length + ' form pages prepared' + (profile.unmapped.length ? ' · ' + profile.unmapped.length + ' answers not recognised (listed in the checklist)' : '');
+    const t = profile.pages.Travel || {};
+    $('rcpt').value = t.dlPrincipalAppTravel_ctl00_tbxPRIN_APP_PETITION_NUM || '';
+    $('los').value = t.tbxTRAVEL_LOS || ''; $('losu').value = t.ddlTRAVEL_LOS_CD || 'Year(s)';
+    $('arr').value = ''; $('visa').value = ''; $('visanum').value = '';
+    ['pcity', 'pstate', 'pcountry', 'pissue', 'pexp'].forEach(id => $(id).value = '');
+    const box = $('pptbox'); box.open = !!profile.passportExpired; box.classList.toggle('must', !!profile.passportExpired);
+    $('pptsum').textContent = profile.passportExpired ? 'New passport needed: the old one is expired or expires within 6 months' : 'Got a new passport since last time?';
+    const hasSal = !!(profile.pages.WorkEducation1 && profile.pages.WorkEducation1.tbxCURR_MONTHLY_SALARY);
+    $('salwrap').classList.toggle('hide', !hasSal); $('sal').value = hasSal ? profile.pages.WorkEducation1.tbxCURR_MONTHLY_SALARY : '';
+    const ul = $('review'); ul.textContent = '';
+    for (const r of profile.review.concat(profile.unmapped.map(u => 'Not recognised, fill by hand: ' + u))) {
+      const li = document.createElement('li'); li.textContent = r;
+      if (/YES|mistake|expired|Not recognised/.test(r)) li.className = 'warn';
+      ul.appendChild(li);
+    }
+    $('json').value = JSON.stringify(profile, null, 1);
+    $('result').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
+
+  $('apply').addEventListener('click', () => {
+    try { profile = JSON.parse($('json').value); } catch { return ($('copied').textContent = 'The profile text has an error — fix it or read the PDF again.'); }
+    const MON = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const t = profile.pages.Travel = profile.pages.Travel || {};
+    const a = $('arr').value;
+    if (a) { const [y, m, d] = a.split('-'); Object.assign(t, { ddlTRAVEL_DTEDay: d, ddlTRAVEL_DTEMonth: MON[+m - 1], tbxTRAVEL_DTEYear: y }); }
+    const r = $('rcpt').value.trim().toUpperCase();
+    if (r) { t.dlPrincipalAppTravel_ctl00_tbxPRIN_APP_PETITION_NUM = r; if (profile.pages.TemporaryWork) profile.pages.TemporaryWork.tbxPetitionNumber = r; }
+    if ($('los').value.trim()) Object.assign(t, { tbxTRAVEL_LOS: $('los').value.trim(), ddlTRAVEL_LOS_CD: $('losu').value });
+    const s = $('sal').value.replace(/[^\d.]/g, '');
+    if (s && profile.pages.WorkEducation1) { profile.pages.WorkEducation1.tbxCURR_MONTHLY_SALARY = s; if (profile.pages.TemporaryWork) profile.pages.TemporaryWork.tbxEmpSalaryInUSD = s; }
+    const dmy = v => { const [y, m, d] = v.split('-'); return [d, MON[+m - 1], y]; };
+    const vd = $('visa').value;
+    if (vd) { const [d, m, y] = dmy(vd); Object.assign(profile.pages.PreviousUSTravel = profile.pages.PreviousUSTravel || {}, { ddlPREV_VISA_ISSUED_DTEDay: d, ddlPREV_VISA_ISSUED_DTEMonth: m, tbxPREV_VISA_ISSUED_DTEYear: y }); }
+    const vn = $('visanum').value.replace(/\s/g, '').toUpperCase();
+    if (vn) (profile.pages.PreviousUSTravel = profile.pages.PreviousUSTravel || {}).tbxPREV_VISA_FOIL_NUMBER = vn;
+    const pi = $('pissue').value, pe = $('pexp').value, pc = $('pcity').value.trim().toUpperCase();
+    let newPpt = false;
+    if (pi || pe || pc) {
+      const P = profile.pages.PptVisa = profile.pages.PptVisa || {};
+      if (pc) P.tbxPPT_ISSUED_IN_CITY = pc;
+      if ($('pstate').value.trim()) P.tbxPPT_ISSUED_IN_STATE = $('pstate').value.trim().toUpperCase();
+      if ($('pcountry').value.trim()) P.ddlPPT_ISSUED_IN_CNTRY = $('pcountry').value.trim().toUpperCase();
+      if (pi) [P.ddlPPT_ISSUED_DTEDay, P.ddlPPT_ISSUED_DTEMonth, P.tbxPPT_ISSUEDYear] = dmy(pi);
+      if (pe) [P.ddlPPT_EXPIRE_DTEDay, P.ddlPPT_EXPIRE_DTEMonth, P.tbxPPT_EXPIREYear] = dmy(pe);
+      newPpt = !!(pi && pe && pc);
+      if (newPpt) profile.passportExpired = false;
+    }
+    profile.review = (profile.review || []).filter(x => !(newPpt && /^Passport expired/.test(x))).filter(x => !(a && /^Update: intended arrival/.test(x)) && !(r && /receipt\/petition number/.test(x)));
+    $('json').value = JSON.stringify(profile, null, 1);
+    $('copied').textContent = 'Applied. Copy the profile when you are ready.';
+  });
+
+  const copy = async (text, out) => {
+    try { await navigator.clipboard.writeText(text); out.textContent = 'Copied.'; }
+    catch { out.textContent = 'Copy was blocked here — select the text and copy it with Ctrl/Cmd+C.'; }
+  };
+  $('copy').addEventListener('click', () => copy($('json').value, $('copied')));
+  $('copyScript').addEventListener('click', () => copy($('script').textContent, $('copiedScript')));
+  $('again').addEventListener('click', () => { $('result').classList.add('hide'); file.value = ''; setStatus(''); drop.scrollIntoView(); });
+
+  drop.addEventListener('click', () => file.click());
+  drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); file.click(); } });
+  file.addEventListener('change', () => readPdf(file.files[0]));
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => readPdf(e.dataTransfer.files[0]));
+}
+</script>
+</body>
+</html>
